@@ -323,7 +323,12 @@ elvis_sel123_overlap_feature <- elvis_ll_sel123 %>%
   select(elvenavn, nedborfeltVassdragNr, nivaa, elvelengde, vassdragsomrade) %>%
   left_join(df_fluvial) %>%
   left_join(df_glacial) %>%
-  filter(fluvial_n > 0 | glacial_n > 0)
+  filter(fluvial_n > 0 | glacial_n > 0) %>% 
+  mutate(
+    fluvial_perc = round(fluvial_length/elvelengde*100, 1),
+    glacial_perc = round(glacial_length/elvelengde*100, 1),
+  )
+  
 
 # . add centroid to data ----
 df_centroid <- elvis_sel123_overlap_feature %>% 
