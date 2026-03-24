@@ -320,7 +320,7 @@ elvis_sel123_overlap_feature <- elvis_ll_sel123 %>%
   left_join(df_glacial) %>%
   filter(fluvial_n > 0 | glacial_n > 0)
 
-# Add centroid to data
+# . Add centroid to data ----
 df_centroid <- elvis_sel123_overlap_feature %>% 
   st_centroid() %>% 
   st_coordinates()
@@ -328,19 +328,24 @@ elvis_sel123_overlap_feature$centroid_x <- df_centroid[,1]
 elvis_sel123_overlap_feature$centroid_y <- df_centroid[,2]
 
 
-# Plot length of fluvial_length per river
-breaks_flu <- quantile(elvis_sel123_overlap$fluvial_length, 
-                       probs = c(0,0.1,0.25,0.5,0.75,0.9,1), na.rm = TRUE,)
-breaks_glac <- quantile(elvis_sel123_overlap$glacial_length, probs = seq(0, 1, 0.20), na.rm = TRUE)
+
+# . Plot length of fluvial_length per river -----
+
+breaks_fluv <- quantile(elvis_sel123_overlap_feature$fluvial_length, 
+                       probs = c(0,0.1,0.2,0.4,0.6,0.8,0.9,1), na.rm = TRUE,)
+breaks_glac <- quantile(elvis_sel123_overlap_feature$glacial_length, 
+                       probs = c(0,0.1,0.2,0.4,0.6,0.8,0.9,1), na.rm = TRUE,)
+
+
 elvis_sel123_overlap %>% 
   filter(!is.na(fluvial_length)) %>% 
   mutate(
     radius = cut(as.numeric(fluvial_length), breaks=breaks_flu, labels = FALSE),
     popup = paste0(
-      elvenavn, "<br>", 
-      nedborfeltVassdragNr, "<br>",
-      "elvelengde = ", elvelengde, "<br>",
-      "fluvial_length = ", fluvial_length)) %>% 
+      elvenavn, " (", nedborfeltVassdragNr, ")<br>", 
+      "elvelengde = ", round(elvelengde,0)/1000, " km<br>",
+      "fluvial_length = ", round(fluvial_length,0)/1000, " km")
+    ) %>% 
   leaflet() %>% 
   addTiles(url, attribution = "Kartverket") %>% 
   addCircleMarkers(lng = ~centroid_x, lat = ~centroid_y, radius = ~radius, popup = ~popup)
