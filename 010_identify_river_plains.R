@@ -420,8 +420,12 @@ elvis_sel123_overlap_feature <- elvis_sel123_overlap_feature %>%
 # . dataset without geometry -----
 
 elvis_sel123_overlap <- elvis_sel123_overlap_feature %>% 
-  st_drop_geometry()
+  st_drop_geometry(elvis_sel123_overlap)
 
+# . saving -----
+readr::write_csv(elvis_sel123_overlap, "data/010_elvis_sel123_overlap.csv")
+writexl::write_xlsx(elvis_sel123_overlap, "data/010_elvis_sel123_overlap.xlsx")
+saveRDS(elvis_sel123_overlap_feature, "data/010_elvis_sel123_overlap_feature.rds")
 
 # . plot length of fluvial_length per river -----
 
