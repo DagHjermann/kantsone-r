@@ -139,19 +139,58 @@ glacial_ll <- glacial %>%
   st_transform(mapdata, crs = 4326)
 
 #
-# . fluvial polygons > 1 km2 ----
+# . glacial polygons > 1 km2 ----
 #
-glacial_ll_sel <- glacial_ll%>% 
+glacial_ll_sel <- glacial_ll %>% 
   filter(SHAPE_Area >= 1*1E6)
 
 #
-# Combine fluvial and glacial deposits in same leaflet map ----
+# Marine deposit (clay) areas ----
 #
-glacial_ll_sel %>% 
-  leaflet() %>% 
+
+polygons %>% 
+  as.data.frame() %>% 
+  filter(grepl("mar", losmassetype_navn, ignore.case = TRUE)) %>% 
+  count(losmassetype, losmassetype_navn) # %>% View("losmasse")
+
+polygons %>% 
+  as.data.frame() %>% 
+  filter(grepl("hav", losmassetype_navn, ignore.case = TRUE)) %>% 
+  count(losmassetype, losmassetype_navn)
+
+# define marine clay areas
+marine_deposits <- c(
+  "Marin strandavsetning, sammenhengende dekke", 
+  "Hav- og fjordavsetning, sammenhengende dekke, stedvis med stor mektighet",
+  "Hav-, fjord- og strandavsetning, usammenhengende eller tynt dekke over berggrunnen"
+)
+
+marine <- polygons %>% 
+  filter(losmassetype_navn %in% marine_deposits)
+
+marine_ll <- marine %>% 
+  st_transform(mapdata, crs = 4326)
+nrow(marine_ll)
+# 67
+
+quantile(marine_ll$SHAPE_Area/1E6)
+sum(marine_ll$SHAPE_Area > 1E6)
+sum(marine_ll$SHAPE_Area > 8E6)
+
+#
+# . marine polygons > 8 km2 ----
+# 
+marine_ll_sel <- marine_ll %>% 
+  filter(SHAPE_Area > 8E6)
+
+#
+# Combine different deposit types in same leaflet map ----
+#
+leaflet() %>% 
   addTiles() %>% 
-  addPolygons(weight = 1, color = "blue") %>% 
-  addPolygons(weight = 1, color = "red", data = fluvial_ll_sel)  
+  addPolygons(weight = 1, color = "blue", data = glacial_ll_sel) %>% 
+  addPolygons(weight = 1, color = "red", data = fluvial_ll_sel) %>% 
+  addPolygons(weight = 1, color = "green", data = marine_ll_sel)  
 
 #
 # ELVIS Elvenett ----
@@ -179,23 +218,16 @@ elvis_ll_sel12 <- elvis_ll %>%
 elvis_ll_sel123 <- elvis_ll %>% 
   filter(nivaa %in% c("1a","2a","3a"))
 
-leaflet() %>% 
-  addTiles() %>% 
-  addPolylines(
-    weight = 4, color = "red", data = elvis_ll_sel1) %>% 
-  addPolylines(
-    weight = 2, color = "red", data = elvis_ll_sel2)
-
-# 
-# check
-#
-url <- "https://cache.kartverket.no/v1/wmts/1.0.0/topograatone/default/webmercator/{z}/{y}/{x}.png"
-elvis_ll_sel123 %>% 
-  filter(elvenavn == "Åsta") %>% 
+if (FALSE){
+  # wrapped in  a FALSE to avoid running it, unless you really want (takes some seconds)
   leaflet() %>% 
-  addTiles() %>% 
-  # addTiles(url, attribution = "Kartverket") %>% 
-  addPolylines(weight = 3, color = "red")
+    addTiles() %>% 
+    addPolylines(
+      weight = 4, color = "red", data = elvis_ll_sel1) %>% 
+    addPolylines(
+      weight = 2, color = "red", data = elvis_ll_sel2)
+}
+
 
 #
 # . overlap analysis ----  
@@ -211,15 +243,22 @@ lst1 <- st_intersects(elvis_ll_sel123, fluvial_ll_sel)
 glacial_ll_sel <- st_make_valid(glacial_ll_sel)      # fix topology
 lst2 <- st_intersects(elvis_ll_sel123, glacial_ll_sel)
 
+# overlap3 (marine)
+marine_ll_sel <- st_make_valid(marine_ll_sel)      # fix topology
+lst3 <- st_intersects(elvis_ll_sel123, marine_ll_sel)
+
 sel1 <- lengths(lst1) > 0 & lengths(lst2) == 0
 sel2 <- lengths(lst1) == 0 & lengths(lst2) > 0
 sel12 <- lengths(lst1) > 0 & lengths(lst2) > 0
+sel3 <- lengths(lst1) == 0 & lengths(lst2) == 0 & lengths(lst3) > 0
 
 elvis_ll_sel123_overlap1 <- elvis_ll_sel123[sel1,] %>% 
   mutate(popup = paste0(elvenavn, "<br>", nedborfeltVassdragNr))
 elvis_ll_sel123_overlap2 <- elvis_ll_sel123[sel2,] %>% 
   mutate(popup = paste0(elvenavn, "<br>", nedborfeltVassdragNr))
 elvis_ll_sel123_overlap12 <- elvis_ll_sel123[sel12,] %>% 
+  mutate(popup = paste0(elvenavn, "<br>", nedborfeltVassdragNr))
+elvis_ll_sel123_overlap3 <- elvis_ll_sel123[sel3,] %>% 
   mutate(popup = paste0(elvenavn, "<br>", nedborfeltVassdragNr))
 
 #
@@ -237,6 +276,7 @@ glacial_ll_sel %>%
   addTiles(url, attribution = "Kartverket") %>% 
   addPolygons(weight = 1, color = "blue") %>% 
   addPolygons(weight = 1, color = "red", data = fluvial_ll_sel)%>% 
+  addPolygons(weight = 1, color = "green", data = marine_ll_sel)%>% 
   addPolylines(
     weight = 3, color = "red", 
     data = elvis_ll_sel123_overlap1, popup = ~popup) %>% 
@@ -245,7 +285,10 @@ glacial_ll_sel %>%
     data = elvis_ll_sel123_overlap2, popup = ~popup) %>% 
   addPolylines(
     weight = 3, color = "magenta", 
-    data = elvis_ll_sel123_overlap12, popup = ~popup)  
+    data = elvis_ll_sel123_overlap12, popup = ~popup) %>% 
+  addPolylines(
+    weight = 3, color = "green", 
+    data = elvis_ll_sel123_overlap3, popup = ~popup)  
 
 # Rivers overlapping with deposits (red=fluvial, blue=glacial, purple=both)
 # Major rivers (nivaa 1a+2a+3a) overlapping with fluvial and glacial deposits
@@ -278,8 +321,19 @@ if (file.exists(fn)){
 } else {
   sel2_all <- lengths(lst2) > 0
   # a bit slow (1 min)
-  elvis_sel123_intersect2 <- st_intersection(elvis_ll_sel123[sel2_all,], glacial_ll_sel[sel_glacial,])
+  elvis_sel123_intersect2 <- st_intersection(elvis_ll_sel123[sel2_all,], glacial_ll_sel)
   saveRDS(elvis_sel123_intersect2, fn)
+}
+
+
+fn <- "data/010_elvis_sel123_intersect3.rds"
+if (file.exists(fn)){
+  elvis_sel123_intersect3 <- readRDS(fn)
+} else {
+  sel3_all <- lengths(lst3) > 0
+  # a bit slow (1 min)
+  elvis_sel123_intersect3 <- st_intersection(elvis_ll_sel123[sel3_all,], marine_ll_sel)
+  saveRDS(elvis_sel123_intersect3, fn)
 }
 
 #
@@ -298,6 +352,12 @@ df_glacial_all <- elvis_sel123_intersect2 %>%
   select(elvenavn, nedborfeltVassdragNr, nivaa)
 nrow(df_glacial_all)  
 df_glacial_all$glacial_length <- st_length(elvis_sel123_intersect2)
+
+df_marine_all <- elvis_sel123_intersect3 %>% 
+  st_drop_geometry() %>%
+  select(elvenavn, nedborfeltVassdragNr, nivaa)
+nrow(df_marine_all)  
+df_marine_all$marine_length <- st_length(elvis_sel123_intersect3)
 
 #
 # . summarise length of overlap ----
@@ -318,6 +378,12 @@ df_glacial <- df_glacial_all %>%
     glacial_length = sum(glacial_length),
     glacial_n = n())
 
+df_marine <- df_marine_all %>% 
+  group_by(elvenavn, nedborfeltVassdragNr, nivaa) %>% 
+  summarise(
+    marine_length = sum(marine_length),
+    marine_n = n())
+
 #
 # Make river dataset ----
 #
@@ -330,10 +396,12 @@ elvis_sel123_overlap_feature <- elvis_ll_sel123 %>%
   select(elvenavn, nedborfeltVassdragNr, nivaa, elvelengde, vassdragsomrade) %>%
   left_join(df_fluvial) %>%
   left_join(df_glacial) %>%
+  left_join(df_marine) %>%
   filter(fluvial_n > 0 | glacial_n > 0) %>% 
   mutate(
     fluvial_perc = round(fluvial_length/elvelengde*100, 1),
     glacial_perc = round(glacial_length/elvelengde*100, 1),
+    marine_perc = round(marine_length/elvelengde*100, 1)
   )
   
 
@@ -369,7 +437,7 @@ fylker_ll <- st_transform(fylker, crs = 4326)
 # . get intersections ----
 #
 # rivers overlapping either fluvial or glacuial
-sel_either <- lengths(lst1) > 0 | lengths(lst2) > 0
+sel_either <- lengths(lst1) > 0 | lengths(lst2) > 0 | lengths(lst3) > 0
 river_fylke_list <- 1:nrow(fylker_ll) %>% 
   map(\(i) st_intersection(elvis_ll_sel123[sel_either,], fylker_ll[i,]))
 
@@ -494,8 +562,9 @@ elvis_sel123_overlap_feature %>%
       "elvelengde = ", round(elvelengde,0)/1000, " km<br>",
       "fylke 1: ", fylke1, " (", fylke1_km, " km)<br>", 
       "fylke 2: ", fylke2, " (", fylke2_km, " km)<br>", 
-      "fluvial deposits = ", round(fluvial_length,0)/1000, " km<br>",
-      "glacial deposits = ", round(glacial_length,0)/1000, " km")
+      "fluvial deposits = ", round(fluvial_length,0)/1000, " km (", fluvial_perc, " %)<br>",
+      "glacial deposits = ", round(glacial_length,0)/1000, " km (", glacial_perc, " %)<br>",
+      "marine deposits = ", round(marine_length,0)/1000, " km (", marine_perc, " %)")
   ) %>% 
   leaflet() %>% 
   addTiles(url, attribution = "Kartverket") %>% 
@@ -503,6 +572,7 @@ elvis_sel123_overlap_feature %>%
   addPolylines(weight = ~river_width, color = "red", popup = ~popup) %>% 
   addPolygons(weight = 1, color = "red", data = fluvial_ll_sel)%>% 
   addPolygons(weight = 1, color = "blue", data = glacial_ll_sel)%>% 
+  addPolygons(weight = 1, color = "green", data = marine_ll_sel)%>% 
   addPolylines(weight = 3, color = "red", popup = ~popup)
 
 
@@ -513,3 +583,9 @@ elvis_sel123_overlap_feature %>%
 # Published as
 # https://rpubs.com/marint-karbon-forstyrrelse/river_overlap_deposits3 
 
+# Rivers overlapping with deposits (red=fluvial, blue=glacial)
+# Major rivers (nivaa 1a+2a+3a) overlapping with fluvial and glacial deposits
+# Popups include info on howm many km of river that overlaps with deposits,
+#   and overlap with fylke
+# Published as
+# https://rpubs.com/marint-karbon-forstyrrelse/river_overlap_deposits3 
