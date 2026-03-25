@@ -252,16 +252,14 @@ glacial_ll_sel %>%
 # rivers_overlapping_deposits2
 
 
+# 
+# Length of river overlap ----
 #
-# Make dataset ----
+# Find length of rivers that overlaps deposits
 # 
 
-#
-# . find length of overlap ----    
-# 
 
-
-# .. extract overlapping river parts ----
+# . extract overlapping river parts ----
 # extract the parts of rivers that overlap with fluvial (intersect1) and glacial (intersect2) polygons
 
 fn <- "data/010_elvis_sel123_intersect1.rds"
@@ -284,7 +282,10 @@ if (file.exists(fn)){
   saveRDS(elvis_sel123_intersect2, fn)
 }
 
-# .. extract length of overlap ----
+#
+# . extract length of overlap ----
+#
+
 # for some rivers, multiple overlaps  
 df_fluvial_all <- elvis_sel123_intersect1 %>% 
   st_drop_geometry() %>%
@@ -298,8 +299,12 @@ df_glacial_all <- elvis_sel123_intersect2 %>%
 nrow(df_glacial_all)  
 df_glacial_all$glacial_length <- st_length(elvis_sel123_intersect2)
 
-# .. summarise length of overlap ----
+#
+# . summarise length of overlap ----
+#
 # summarise by river
+# "levenavn" is not unique to rivers, so must add "nedborfeltVassdragNr"
+#
 
 df_fluvial <- df_fluvial_all %>% 
   group_by(elvenavn, nedborfeltVassdragNr, nivaa) %>% 
@@ -314,10 +319,12 @@ df_glacial <- df_glacial_all %>%
     glacial_n = n())
 
 #
-# . extract river data
+# Make river dataset ----
 #
 # 'elvis_sel123_overlap_feature'  
 #
+
+# extract river data
 
 elvis_sel123_overlap_feature <- elvis_ll_sel123 %>%
   select(elvenavn, nedborfeltVassdragNr, nivaa, elvelengde, vassdragsomrade) %>%
@@ -338,6 +345,9 @@ elvis_sel123_overlap_feature$centroid_x <- df_centroid[,1]
 elvis_sel123_overlap_feature$centroid_y <- df_centroid[,2]
 
 
+#
+# Add fylke (county) data ----
+#
 
 # . fylke (county) data ----
 
@@ -355,16 +365,14 @@ fylker_ll <- st_transform(fylker, crs = 4326)
 #   addTiles() %>% 
 #   addPolylines(weight = 4, color = "red", data = fylker_ll)
 
-# elvis_ll_sel123 %>% View("elvis")
-
-# leaflet() %>% 
-#   addTiles() %>% 
-#   addPolylines(weight = 4, color = "red", data = elvis_ll_sel123[138,])
-
+#
+# . get intersections ----
+#
 # rivers overlapping either fluvial or glacuial
 sel_either <- lengths(lst1) > 0 | lengths(lst2) > 0
 river_fylke_list <- 1:nrow(fylker_ll) %>% 
   map(\(i) st_intersection(elvis_ll_sel123[sel_either,], fylker_ll[i,]))
+
 river_fylkelength_list <- river_fylke_list %>% 
   map(\(obj) {
     result <- obj %>% 
@@ -374,17 +382,21 @@ river_fylkelength_list <- river_fylke_list %>%
     result$length <- st_length(obj)
     result
     })
+
 # combine to one tall data frame
 river_fylkelength_tall <- bind_rows(river_fylkelength_list) %>% 
   mutate(length = as.numeric(length)/1000)
 head(river_fylkelength_tall, 3)
+
 # change to one wide data frame
 river_fylkelength_wide <- tidyr::pivot_wider(
   river_fylkelength_tall, names_from = navn, values_from = length, values_fill = 0
 )
 head(river_fylkelength_wide, 3)
 
+#
 # use function for finding the 3 most covered fylke for river number i:
+#
 river_fylkelength_wide2 <- river_fylkelength_wide %>% select(Troms:Oslo) %>% as.data.frame() 
 get_max_fylke <- function(i){
   vect <- river_fylkelength_wide2 %>% as.matrix() %>%  .[i,] %>% sort(decreasing = TRUE)
@@ -401,7 +413,7 @@ get_max_fylke <- function(i){
     fylke3=fylke3, fylke3_km=round(fylke3_km,0))
 }
 
-# Get all results;:
+# Get results; for all rivers:
 river_fylkelength_max <- 1:nrow(river_fylkelength_wide) %>% 
   map_dfr(get_max_fylke) 
 rownames(river_fylkelength_max) <- NULL
@@ -417,15 +429,24 @@ elvis_sel123_overlap_feature <- elvis_sel123_overlap_feature %>%
             by = join_by(elvenavn, nedborfeltVassdragNr))
 
 
-# . dataset without geometry -----
+#
+# Save dataset without geometry -----
+#
 
 elvis_sel123_overlap <- elvis_sel123_overlap_feature %>% 
   st_drop_geometry(elvis_sel123_overlap)
 
-# . saving -----
+# . saving without geometry  
 readr::write_csv(elvis_sel123_overlap, "data/010_elvis_sel123_overlap.csv")
 writexl::write_xlsx(elvis_sel123_overlap, "data/010_elvis_sel123_overlap.xlsx")
+
+# . saving with geometry  
 saveRDS(elvis_sel123_overlap_feature, "data/010_elvis_sel123_overlap_feature.rds")
+
+
+#
+# Some plots ----
+#
 
 # . plot length of fluvial_length per river -----
 
@@ -450,4 +471,45 @@ elvis_sel123_overlap_feature %>%
   # addMarkers(lng = ~centroid_x, lat = ~centroid_y)
 
 
+#
+# Combine leaflet maps ----  
+#
+
+# toporaster
+url <- "https://cache.kartverket.no/v1/wmts/1.0.0/toporaster/default/webmercator/{z}/{y}/{x}.png"
+# greyscale
+url <- "https://cache.kartverket.no/v1/wmts/1.0.0/topograatone/default/webmercator/{z}/{y}/{x}.png"
+
+river_width <- 2
+river_width[elvis_sel123_overlap_feature$nivaa == "2a"] <- 4
+
+elvis_sel123_overlap_feature %>% 
+  mutate(
+    river_width = case_when(
+      nivaa %in% "1a" ~ 6,
+      nivaa %in% "2a" ~ 4,
+      nivaa %in% "3a" ~ 2),
+    popup = paste0(
+      elvenavn, " (", nedborfeltVassdragNr, "), ", nivaa, "<br>", 
+      "elvelengde = ", round(elvelengde,0)/1000, " km<br>",
+      "fylke 1: ", fylke1, " (", fylke1_km, " km)<br>", 
+      "fylke 2: ", fylke2, " (", fylke2_km, " km)<br>", 
+      "fluvial deposits = ", round(fluvial_length,0)/1000, " km<br>",
+      "glacial deposits = ", round(glacial_length,0)/1000, " km")
+  ) %>% 
+  leaflet() %>% 
+  addTiles(url, attribution = "Kartverket") %>% 
+  addPolylines(weight = 3, color = "black", data = fylker_ll) %>% 
+  addPolylines(weight = ~river_width, color = "red", popup = ~popup) %>% 
+  addPolygons(weight = 1, color = "red", data = fluvial_ll_sel)%>% 
+  addPolygons(weight = 1, color = "blue", data = glacial_ll_sel)%>% 
+  addPolylines(weight = 3, color = "red", popup = ~popup)
+
+
+# Rivers overlapping with deposits (red=fluvial, blue=glacial)
+# Major rivers (nivaa 1a+2a+3a) overlapping with fluvial and glacial deposits
+# Popups include info on howm many km of river that overlaps with deposits,
+#   and overlap with fylke
+# Published as
+# https://rpubs.com/marint-karbon-forstyrrelse/river_overlap_deposits3 
 
